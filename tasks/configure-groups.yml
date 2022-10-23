@@ -1,73 +1,60 @@
-# add user specific settings
 ---
-- name: add user to group
-  become: yes
-  command: "usermod -a -G microk8s {{ user }}"
-  changed_when: true
-  with_items: '{{ users }}'
-  loop_control:
-    loop_var: user
-    label: '{{ user }}'
+- name: Add user to group
+  become: true
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: microk8s
+    append: true
+  loop: '{{ microk8s_users }}'
 
 - name: Create .kube folder for the user
-  become: yes
-  become_user: '{{ user }}'
-  file:
+  become: false
+  become_user: "{{ item }}"
+  ansible.builtin.file:
     path: ~/.kube
     state: directory
-    owner: '{{ user }}'
-    group: '{{ user }}'
+    owner: "{{ item }}"
+    group: "{{ item }}"
     mode: 0750
-  with_items: '{{ users }}'
-  loop_control:
-    loop_var: user
-    label: '{{ user }}'
+  loop: "{{ microk8s_users }}"
 
-- name: create kubectl config
-  become: yes
-  changed_when: true
-  shell: microk8s config > /home/{{ user }}/.kube/config
+- name: Create kubectl config
+  become: true
+  changed_when: false
+  ansible.builtin.shell: microk8s config > /home/{{ item }}/.kube/config
   args:
     executable: /bin/bash
-  with_items: '{{ users }}'
-  loop_control:
-    loop_var: user
-    label: '{{ user }}'
+  loop: "{{ microk8s_users }}"
 
-- name: reaffirm permission on files
-  become: yes
-  file:
+- name: Reaffirm permission on files
+  become: true
+  ansible.builtin.file:
     path: ~/.kube
     state: directory
-    owner: '{{ user }}'
-    group: '{{ user }}'
+    owner: "{{ item }}"
+    group: "{{ item }}"
     recurse: yes
-  with_items: '{{ users }}'
-  loop_control:
-    loop_var: user
-    label: '{{ user }}'
+  loop: "{{ microk8s_users }}"
 
-- name: add helm repository to user
-  become: yes
-  become_user: '{{ item.0 }}'
-  shell: "helm repo add {{ item.1.name }} {{ item.1.url }}"
-  args:
-    executable: /bin/bash
-  changed_when: true
+- name: Add helm repository to user
+  become: true
+  become_user: "{{ item.0 }}"
+  kubernetes.core.helm_repository: 
+    name: "{{ item.1.name }}"
+    repo_url: "{{ item.1.url }}"
   with_nested:
-    - "{{ users }}"
+    - "{{ microk8s_users }}"
     - "{{ helm3_repositories }}"
-  when: microk8s_plugins.helm3
+  when: 
+    - microk8s_plugins.helm3
+    - inventory_hostname in groups[microk8s_group_ha]
 
-- name: update helm repos
-  become: yes
-  become_user: '{{ user }}'
-  shell: "helm repo update"
-  args:
-    executable: /bin/bash
-  changed_when: true
-  with_items: '{{ users }}'
-  loop_control:
-    loop_var: user
-    label: '{{ user }}'
-  when: microk8s_plugins.helm3
+# - name: Update helm repos
+#   become: true
+#   become_user: "{{ item }}"
+#   ansible.builtin.shell: helm repo update
+#   args:
+#     executable: /bin/bash
+#   changed_when: true
+#   loop: "{{ microk8s_users }}"
+#   when: microk8s_plugins.helm3
